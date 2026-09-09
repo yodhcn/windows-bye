@@ -71,6 +71,10 @@ void EngineWorker::setCameraIndex(int idx) {
     m_cameraIndex = idx < 0 ? 0 : idx;
 }
 
+void EngineWorker::setMinFaceWidthPct(int pct) {
+    m_minFaceWidthPct.store(qBound(1, pct, 100));
+}
+
 QStringList EngineWorker::cameraDevices() {
     // 用 DirectShow 枚举视频输入设备（返回的次序与 OpenCV 设备索引一致）。
     QStringList names;
@@ -249,16 +253,26 @@ void EngineWorker::detectLoop() {
         QVector<FaceEngine::Result> results;
         m_engine.process(frame.data, frame.cols, frame.rows, &results);
 
+        // 用"人脸框宽度占画面宽度的比例"判定人脸是否够近(足以视为当前用户在场)。
+        // 太窄的小人脸=坐得很远/是后排经过的人，不参与在场判定，防止远处人员触发"人在位"。
+        const int frameW = frame.cols;
+        const int minW   = frameW * m_minFaceWidthPct.load() / 100;  // 该百分比对应的最小像素宽
+
         QVector<DetectionOut> dets;
         dets.reserve(results.size());
+        bool anyNear = false;  // 是否存在够近的人脸
         for (const auto& r : results) {
             DetectionOut o;
             o.rect  = r.rect;
             o.score = r.score;
+            o.isNear  = r.rect.width() >= minW;
+            if (o.isNear)
+                anyNear = true;
             dets.push_back(o);
         }
 
         emit detections(frame.cols, frame.rows, dets);
-        emit stateChanged(!results.isEmpty(), nowMs());
+        // present = 至少一个"够近"的人脸；仅远处人脸视为用户不在位。
+        emit stateChanged(anyNear, nowMs());
     }
 }

@@ -41,10 +41,16 @@ void PreviewWidget::paintEvent(QPaintEvent*) {
     p.drawImage(target, m_image);
 
     // 叠加人脸检测框（坐标与图像同像素空间）。
+    // 够近(near)的人脸=绿框；太远/后排的人脸=灰色虚线框，仅提示检测到但不算用户在场。
     for (const auto& d : m_dets) {
         QRect r((int)(d.rect.x() * scale) + offX, (int)(d.rect.y() * scale) + offY,
                 (int)(d.rect.width() * scale), (int)(d.rect.height() * scale));
-        p.setPen(QPen(QColor(0, 200, 120), 2));
+        if (d.isNear) {
+            p.setPen(QPen(QColor(0, 200, 120), 2));
+        } else {
+            QPen pen(QColor(140, 150, 160), 1, Qt::DashLine);
+            p.setPen(pen);
+        }
         p.drawRect(r.adjusted(1, 1, -1, -1));
     }
 }
