@@ -127,16 +127,23 @@ if (-not (Test-Path (Join-Path $Isf "CMakeLists.txt"))) {
 $isfCml = Join-Path $Isf 'cpp\inspireface\CMakeLists.txt'
 if (Test-Path $isfCml) {
     $cmlText = [IO.File]::ReadAllText($isfCml)
-    $oldDlLine = '    set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT} dl)'
-    if ($cmlText.Contains($oldDlLine)) {
-        $dlGuard = @'
+    # 幂等锚定：匹配 find_package(Threads) 之后"紧跟"的裸 dl 行。已打补丁后 find_package 后跟的是
+    # if(NOT WIN32)，此锚不再匹配 → 天然幂等。切勿只用裸 dl 单行做 .Contains 子串判断：
+    # 补丁生成的 if 内行(8空格缩进)含 4空格前缀子串，会反复命中并把 if(NOT WIN32) 层层套娃打坏文件。
+    $oldDlBlock = @'
+    find_package(Threads REQUIRED)
+    set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT} dl)
+'@.TrimEnd("`r", "`n")
+    $dlGuard = @'
+    find_package(Threads REQUIRED)
     if(NOT WIN32)
         set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT} dl)
     else()
         set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT})
     endif()
 '@.TrimEnd("`r", "`n")
-        $cmlText = $cmlText.Replace($oldDlLine, $dlGuard)
+    if ($cmlText.Contains($oldDlBlock)) {
+        $cmlText = $cmlText.Replace($oldDlBlock, $dlGuard)
         [IO.File]::WriteAllText($isfCml, $cmlText, (New-Object System.Text.UTF8Encoding($false)))
         Write-Host "    [patch] 已对 InspireFace 的 dl 链接加 NOT WIN32 保护。"
     } else {
