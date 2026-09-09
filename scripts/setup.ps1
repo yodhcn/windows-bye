@@ -61,11 +61,22 @@ if (-not $SkipDeps) {
     & (Join-Path $AqtVenv "Scripts\python.exe") -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 --outputdir $Third
 
     # 3.2 OpenCV
-    if (-not (Test-Path (Join-Path $Third "opencv\opencv\build\include"))) {
+    # 注意：7-Zip 的 -o 开关必须"无空格紧贴"目标目录(-o<dir>)，写成 "-o <dir>" 会报
+    # "Too short switch: -o" 并静默失败；且原生 exe + Out-Null 下非零退出码不触发 $ErrorActionPreference，
+    # 故必须显式检查 $LASTEXITCODE。以 opencv2/core.hpp 是否存在作为"解压成功"的可靠判据(比 include 目录存在更稳)。
+    $OcvHead = Join-Path $Third "opencv\opencv\build\include\opencv2\core.hpp"
+    if (-not (Test-Path $OcvHead)) {
         $ocv = Join-Path $Third "downloads\opencv-4.10.0-windows.exe"
         New-Item -ItemType Directory -Path (Split-Path $ocv) -Force | Out-Null
-        Invoke-ProxyDownload "https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-windows.exe" $ocv
-        & "C:\Program Files\7-Zip\7z.exe" x -y -o (Join-Path $Third "opencv") $ocv | Out-Null
+        if (-not (Test-Path $ocv) -or (Get-Item $ocv).Length -lt 100000000) {
+            Invoke-ProxyDownload "https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-windows.exe" $ocv
+        }
+        $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+        if (-not (Test-Path $sevenZip)) { throw "未找到 7-Zip: $sevenZip（Windows CI 需预装 7-Zip）" }
+        $out = & $sevenZip x -y "-o$(Join-Path $Third 'opencv')" $ocv
+        if ($LASTEXITCODE -ne 0) { throw "OpenCV 解压失败（7z exit=$LASTEXITCODE）：$($out | Select-Object -Last 5)" }
+        if (-not (Test-Path $OcvHead)) { throw "OpenCV 解压后仍缺 $OcvHead，解压产物结构异常。" }
+        Write-Host "    OpenCV 已就位: $OcvHead"
     }
 
     # 3.3 InspireFace 源码 + 3rdparty
