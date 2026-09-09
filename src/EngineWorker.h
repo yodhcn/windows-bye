@@ -19,11 +19,6 @@
 struct DetectionOut {
     QRect rect;
     float score = 0.f;
-    /// 是否"够近"（人脸框宽度 ≥ 最小占比阈值），够近的人脸才参与"用户在场"判定。
-    /// 用于排除坐在后排/经过的远处人脸，避免误判当前用户仍在座位上。
-    /// 注意命名 isNear 而非 near：Windows SDK minwindef.h 把 near/far 定义成空宏，
-    /// 若叫 near 会在 .cpp(含 windows.h) 中被展开成空而报 C2059。
-    bool isNear = false;
 };
 
 /// 后台引擎：一个采集线程 + 一个检测线程。
@@ -42,9 +37,6 @@ public:
     static QStringList cameraDevices();
     /// 设置使用的设备索引（需配合 stop/start 重启采集以生效）。
     void setCameraIndex(int idx);
-    /// 设置"够近"判定阈值：人脸框宽度须 ≥ 画面宽度的该百分比（1~100）才算用户在场。
-    /// 例：15 表示人脸宽度至少占画面 15%（正常坐姿通常 25~35%，太远/后排常 <10%）。
-    void setMinFaceWidthPct(int pct);
 
     /// 释放摄像头并暂停检测（锁定时调用，立即返回）。
     void pauseCapture();
@@ -74,8 +66,6 @@ private:
     std::atomic<bool> m_paused{false};
     // 预览发布开关：窗口可见（有消费者）才为 true；为 false 时采集线程跳过预览解码/emit。
     std::atomic<bool> m_previewEnabled{false};
-    // "够近"阈值(百分比)：detectLoop 运行中可被 UI 实时修改，故用 atomic。
-    std::atomic<int> m_minFaceWidthPct{15};
 
     // 最新帧共享（采集写/检测读）。
     std::mutex m_frameMutex;

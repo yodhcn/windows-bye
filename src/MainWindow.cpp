@@ -78,12 +78,10 @@ MainWindow::MainWindow(int defaultDelayMs, QWidget* parent)
         m_delayMs = qBound(1000, cfg.value(QStringLiteral("leaveDelaySec"), defaultDelayMs / 1000).toInt() * 1000,
                            600 * 1000);
         m_cameraIndex = cfg.value(QStringLiteral("cameraIndex"), 0).toInt();
-        m_minFaceWidthPct = qBound(5, cfg.value(QStringLiteral("minFaceWidthPct"), 15).toInt(), 50);
     }
 
     m_worker = new EngineWorker(QStringLiteral("models/app.pack"), m_appRoot, this);
     m_worker->setCameraIndex(m_cameraIndex);
-    m_worker->setMinFaceWidthPct(m_minFaceWidthPct);
 
     buildUi();
     buildTray();
@@ -173,20 +171,6 @@ void MainWindow::buildUi() {
     connect(m_deviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &MainWindow::onDeviceChanged);
 
-    // 最小人脸尺寸阈值：人脸框宽须占画面宽的该百分比才算"够近"(当前用户在场)。
-    // 设大→需要人坐得足够近才算在场；用于排除后排/路过的人。
-    ctrlRow->addWidget(makeLabel(QStringLiteral("最近坐距(最小人脸 %)"), watchPage, nullptr));
-    m_minWSpin = new QSpinBox(watchPage);
-    m_minWSpin->setRange(5, 50);
-    m_minWSpin->setValue(m_minFaceWidthPct);
-    m_minWSpin->setSuffix(QStringLiteral(" %"));
-    m_minWSpin->setToolTip(
-        QStringLiteral("人脸框宽度占画面宽度需达到该百分比才判定为“您在场”。\n"
-                       "正常坐姿通常 25~35%；坐得远或后排的人会低于该值而被视为离开。"));
-    connect(m_minWSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            &MainWindow::onMinWidthChanged);
-    ctrlRow->addWidget(m_minWSpin);
-
     m_pauseBtn = new QPushButton(QStringLiteral("暂停看护"), watchPage);
     m_pauseBtn->setCheckable(true);
     m_pauseBtn->setCursor(Qt::PointingHandCursor);
@@ -236,7 +220,6 @@ void MainWindow::onPreviewFrame(const QImage& frame) {
 }
 
 void MainWindow::onDetections(int, int, QVector<DetectionOut> dets) {
-    m_anyFace = !dets.isEmpty();
     m_preview->setDetections(dets);
 }
 
@@ -307,21 +290,12 @@ void MainWindow::updateStatusText() {
         text = QStringLiteral("检测到人脸，安全，不锁屏");
     else {
         const qint64 elapsed = m_absentSince ? QDateTime::currentMSecsSinceEpoch() - m_absentSince : 0;
-        // 有人脸但都不够近(太远/后排) 与 完全没人脸 分开提示，方便调"最近坐距"阈值。
-        if (m_anyFace) {
-            if (elapsed <= 0)
-                text = QStringLiteral("检测到远处人脸，视为离开");
-            else
-                text = QStringLiteral("人脸过远/可能为后排 %1 秒 / %2 秒后锁屏")
-                           .arg(elapsed / 1000)
-                           .arg(m_delayMs / 1000);
-        } else if (elapsed <= 0) {
+        if (elapsed <= 0)
             text = QStringLiteral("画面中未检测到人脸");
-        } else {
+        else
             text = QStringLiteral("无人脸 %1 秒 / %2 秒后锁屏")
                        .arg(elapsed / 1000)
                        .arg(m_delayMs / 1000);
-        }
     }
     m_statusLabel->setText(text);
 }
@@ -329,7 +303,6 @@ void MainWindow::updateStatusText() {
 void MainWindow::onPauseToggled(bool paused) {
     m_paused = paused;
     m_absentSince = 0;
-    m_anyFace = false;
     updateStatusText();
 }
 
@@ -342,10 +315,8 @@ void MainWindow::onAutostartToggled(bool checked) {
 
 void MainWindow::onCameraReady(bool ready) {
     m_cameraReady = ready;
-    if (!ready) {
+    if (!ready)
         m_absentSince = 0;
-        m_anyFace = false;
-    }
     updateStatusText();
 }
 
@@ -353,16 +324,6 @@ void MainWindow::onDelayChanged(int sec) {
     // 持久化离开延迟设置。
     QSettings cfg(settingsFilePath(), QSettings::IniFormat);
     cfg.setValue(QStringLiteral("leaveDelaySec"), sec);
-    cfg.sync();
-}
-
-void MainWindow::onMinWidthChanged(int pct) {
-    m_minFaceWidthPct = qBound(5, pct, 50);
-    if (m_worker)
-        m_worker->setMinFaceWidthPct(m_minFaceWidthPct);
-    // 持久化"最小人脸尺寸"阈值。
-    QSettings cfg(settingsFilePath(), QSettings::IniFormat);
-    cfg.setValue(QStringLiteral("minFaceWidthPct"), m_minFaceWidthPct);
     cfg.sync();
 }
 
@@ -387,7 +348,6 @@ void MainWindow::onSessionLocked() {
         return;
     m_locked = true;
     m_present = false;
-    m_anyFace = false;
     m_absentSince = 0;
     m_worker->pauseCapture();   // 主动释放摄像头资源
     m_preview->setDetections({});

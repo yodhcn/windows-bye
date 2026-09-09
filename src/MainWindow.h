@@ -49,7 +49,6 @@ private slots:
     void onDeviceChanged(int idx);
     void onTrayShow();
     void onTrayExit();
-    void onMinWidthChanged(int pct);
 
 private:
     void buildUi();
@@ -65,14 +64,12 @@ private:
 
     bool m_engineReady = false;
     bool m_cameraReady = false;
-    bool m_present     = false;   // 是否有"够近"的人脸(由 EngineWorker 按阈值判定)
-    bool m_anyFace     = false;   // 最近一次检测是否检到任意人脸(无论远近)，用于状态文案
+    bool m_present     = false;
     bool m_locked      = false;
 
     // 看护状态。
     int  m_delayMs       = 30000;
     int  m_cameraIndex   = 0;
-    int  m_minFaceWidthPct = 15;  // "够近"阈值：人脸框宽须占画面宽的该百分比才算在场
     bool m_paused        = false;   // 用户手动"暂停看护"
     qint64 m_absentSince = 0;
     qint64 m_lastLockMs  = -100000;  // 距上次锁屏节约时间
@@ -80,7 +77,6 @@ private:
     // UI。
     PreviewWidget* m_preview = nullptr;
     QSpinBox* m_delaySpin    = nullptr;
-    QSpinBox* m_minWSpin     = nullptr;  // 最小人脸尺寸阈值(占画面宽 %)
     QPushButton* m_pauseBtn  = nullptr;
     QCheckBox* m_autostartChk = nullptr;
     QComboBox* m_deviceCombo = nullptr;
