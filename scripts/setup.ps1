@@ -107,6 +107,32 @@ if (-not (Test-Path (Join-Path $Isf "CMakeLists.txt"))) {
     throw "缺少 InspireFace 源码，请去掉 -SkipDeps 先拉依赖。"
 }
 
+# ---- 4.0 修上游 bug：InspireFace 顶层的 if(APPLE)...else() 把"非 Apple"一律当 linux，
+#      于是 cpp/inspireface/CMakeLists.txt 末尾会执行 if(PLAT STREQUAL "linux") ... 链接 dl，
+#      MSVC 下找不到 dl.lib -> LNK1181: cannot open input file 'dl.lib'。
+#      注意 PLAT 是普通变量(set 非 CACHE)且被强制成 linux，无法用 -DPLAT=... 覆盖。
+#      又因 third_party 被 .gitignore、CI 每次全新 clone，补丁必须写在这里(克隆之后、configure 之前)才会到 CI。
+#      故对 cpp/inspireface/CMakeLists.txt 做幂等外科补丁：仅把裸 dl 保护到 NOT WIN32 之下，Linux/Apple 行为不变。
+$isfCml = Join-Path $Isf 'cpp\inspireface\CMakeLists.txt'
+if (Test-Path $isfCml) {
+    $cmlText = [IO.File]::ReadAllText($isfCml)
+    $oldDlLine = '    set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT} dl)'
+    if ($cmlText.Contains($oldDlLine)) {
+        $dlGuard = @'
+    if(NOT WIN32)
+        set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT} dl)
+    else()
+        set(LINK_THIRD_LIBS ${LINK_THIRD_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
+'@.TrimEnd("`r", "`n")
+        $cmlText = $cmlText.Replace($oldDlLine, $dlGuard)
+        [IO.File]::WriteAllText($isfCml, $cmlText, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "    [patch] 已对 InspireFace 的 dl 链接加 NOT WIN32 保护。"
+    } else {
+        Write-Host "    [patch] InspireFace 的 dl 补丁已就位(或源已变更)，跳过。"
+    }
+}
+
 # ---- 4.1 InspireFace（共享 DLL，MNN 静态）----
 Ensure-NinjaOnPath
 $Vcvars = Get-VcvarsPath
