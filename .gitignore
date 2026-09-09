@@ -1,0 +1,25 @@
+# ---- 构建产物 / 本地生成目录 ----
+/build/
+/dist/
+
+# ---- 第三方依赖（体积大，由 scripts/bootstrap.ps1 联网拉取）----
+/third_party/
+
+# ---- 模型包：由 bootstrap.ps1 自动下载到 models/app.pack ----
+# 若想入库以便离线/CI 复用，可移除下面两行并提交 models/app.pack
+/models/*.pack
+/models/*.onnx
+
+# ---- 日志 / 临时 ----
+*.log
+dep.log
+crash.log
+pkg_err.log
+run.log
+
+# ---- 工具目录 / IDE ----
+.workbuddy/
+.trae/
+.vs/
+.idea/
+*.user

@@ -1,0 +1,66 @@
+# Windows Bye —— GitHub Actions 自动构建打包工作流
+#
+# 在 GitHub 托管的 Windows 环境里，从干净检出开始：
+#   1) 跑 scripts/setup.ps1   —— 检查并安装环境 + 拉依赖 + 编译（InspireFace + 应用）
+#   2) 跑 scripts/package.ps1 —— 打包便携产物 dist\windows-bye
+#   3) 把 dist\windows-bye 用 actions/upload-artifact@v4 上传为 zip 工件
+#
+# 触发：
+#   - push 打 v* tag 时（如 v1.0.0）
+#   - 手动：仓库 Actions 页 → 本工作流 → Run workflow
+# 运行环境：windows-latest（对应 VS2026 / VS18，与本项目本地使用的 VS18 工具链一致）
+
+name: build-windows
+
+on:
+  push:
+    tags:
+      - "v*"        # 打版本 tag 时构建
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      # 1) 检出仓库（含子模块；third_party/models 若入库则一并拉取）
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # 2) 检查并安装环境 + 拉依赖 + 编译（InspireFace + 应用）
+      #    scripts/setup.ps1：确保 MSVC/ninja → 拉 Qt/OpenCV/InspireFace/模型 →
+      #    编并安装 InspireFace → 编本应用（exe 到 build/）。
+      #    首次运行联网拉依赖耗时较长（约 10~25 分钟）属正常。
+      - name: Setup & Build (scripts/setup.ps1)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & "$env:GITHUB_WORKSPACE/scripts/setup.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "setup.ps1 failed" }
+
+      # 3) 打包便携产物 dist\windows-bye（windeployqt + DLL + 模型）
+      - name: Package (scripts/package.ps1)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & "$env:GITHUB_WORKSPACE/scripts/package.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "package.ps1 failed" }
+
+      # 4) 校验打包产物存在
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          $exe = "$env:GITHUB_WORKSPACE/dist/windows-bye/windows-bye.exe"
+          if (-not (Test-Path $exe)) { throw "产物缺失: $exe" }
+          Write-Host "OK: $exe"
+
+      # 5) 上传 dist\windows-bye（upload-artifact 会自动打包成 zip）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bye
+          path: dist/windows-bye
+          if-no-files-found: error
