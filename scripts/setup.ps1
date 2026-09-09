@@ -102,7 +102,9 @@ if (-not (Test-Path (Join-Path $Isf "CMakeLists.txt"))) {
     throw "缺少 InspireFace 源码，请去掉 -SkipDeps 先拉依赖。"
 }
 Write-Host "==> [编译] InspireFace ..."
-& $RunCMake $Isf (Join-Path $Isf "build") "-DISF_BUILD_SHARED_LIBS=ON -DMNN_BUILD_SHARED_LIBS=OFF -DISF_BUILD_WITH_SAMPLE=OFF -DISF_BUILD_WITH_TEST=OFF"
+# CMAKE_POLICY_VERSION_MINIMUM=3.5：MNN(InspireFace 3rdparty) 首行 cmake_minimum_required(3.0)，
+# 新版 CMake(≥3.5 兼容移除)会直接报错拒绝配置；传该值让 CMake 按 3.5 策略放行，无需改动第三方源码。
+& $RunCMake $Isf (Join-Path $Isf "build") "-DISF_BUILD_SHARED_LIBS=ON -DMNN_BUILD_SHARED_LIBS=OFF -DISF_BUILD_WITH_SAMPLE=OFF -DISF_BUILD_WITH_TEST=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 cmd /c "call `"$Vcvars`" >nul && cmake --install `"$(Join-Path $Isf 'build')`""
 if ($LASTEXITCODE -ne 0) { throw "InspireFace 安装失败" }
 
