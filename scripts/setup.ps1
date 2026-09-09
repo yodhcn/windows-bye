@@ -104,7 +104,10 @@ if (-not (Test-Path (Join-Path $Isf "CMakeLists.txt"))) {
 Write-Host "==> [编译] InspireFace ..."
 # CMAKE_POLICY_VERSION_MINIMUM=3.5：MNN(InspireFace 3rdparty) 首行 cmake_minimum_required(3.0)，
 # 新版 CMake(≥3.5 兼容移除)会直接报错拒绝配置；传该值让 CMake 按 3.5 策略放行，无需改动第三方源码。
-& $RunCMake $Isf (Join-Path $Isf "build") "-DISF_BUILD_SHARED_LIBS=ON -DMNN_BUILD_SHARED_LIBS=OFF -DISF_BUILD_WITH_SAMPLE=OFF -DISF_BUILD_WITH_TEST=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+# CMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES：InspireFace/InspireCV/MNN 用了 POSIX 宏 M_PI，
+# MSVC 默认不定义(需 _USE_MATH_DEFINES 才从 <cmath> 暴露)；命令行 /D 先于所有源码生效，
+# 覆盖全部用 M_PI 的目标，免改第三方源码。GCC 下多余但无害。
+& $RunCMake $Isf (Join-Path $Isf "build") "-DISF_BUILD_SHARED_LIBS=ON -DMNN_BUILD_SHARED_LIBS=OFF -DISF_BUILD_WITH_SAMPLE=OFF -DISF_BUILD_WITH_TEST=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES"
 cmd /c "call `"$Vcvars`" >nul && cmake --install `"$(Join-Path $Isf 'build')`""
 if ($LASTEXITCODE -ne 0) { throw "InspireFace 安装失败" }
 
