@@ -88,31 +88,51 @@ if (-not $SkipDeps) {
 }
 
 # ============ 4) 编译 ============
-Ensure-NinjaOnPath
-$Vcvars = Get-VcvarsPath
-$RunCMake = { param($src, $guest, $cfg)
-    $cmd = "call `"$Vcvars`" >nul && cmake -G Ninja -DCMAKE_BUILD_TYPE=Release $cfg -S `"$src`" -B `"$guest`" && cmake --build `"$guest`" --parallel"
-    cmd /c $cmd
-    if ($LASTEXITCODE -ne 0) { throw "构建失败: $src" }
+# 做法：先用 cmd 跑一次 vcvars64.bat 并把结果环境(set 输出)逐行导入当前 PowerShell 进程，
+# 之后 cmake / ninja 直接用 PowerShell 数组调用——可精确传含空格的值(如 CMAKE_CXX_FLAGS 的多个 /D 宏)，
+# 彻底规避 cmd /c 拼字符串时引号/空格解析的坑。
+function Import-VcvarsEnv([string]$VcvarsBat) {
+    $lines = & cmd /c "`"$VcvarsBat`" >nul 2>&1 && set"
+    foreach ($ln in $lines) {
+        if ($ln -match '^([^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+    }
 }
-
-# 4.1 InspireFace（共享 DLL，MNN 静态）——依赖就绪即可编
+# 防 min/max 宏污染 std::min/max(InspireFace 源码直接调 std::min/max 且拉入 windows.h，
+# 无 /DNOMINMAX 会 C2589/C4002，complex 内部 numeric_limits::max 也被波及)与提供 M_PI(_USE_MATH_DEFINES)。
+$CxxWinFix = '/D_USE_MATH_DEFINES /DNOMINMAX'
 $Isf = Join-Path $Third "InspireFace"
 if (-not (Test-Path (Join-Path $Isf "CMakeLists.txt"))) {
     throw "缺少 InspireFace 源码，请去掉 -SkipDeps 先拉依赖。"
 }
+
+# ---- 4.1 InspireFace（共享 DLL，MNN 静态）----
+Ensure-NinjaOnPath
+$Vcvars = Get-VcvarsPath
 Write-Host "==> [编译] InspireFace ..."
-# CMAKE_POLICY_VERSION_MINIMUM=3.5：MNN(InspireFace 3rdparty) 首行 cmake_minimum_required(3.0)，
-# 新版 CMake(≥3.5 兼容移除)会直接报错拒绝配置；传该值让 CMake 按 3.5 策略放行，无需改动第三方源码。
-# CMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES：InspireFace/InspireCV/MNN 为 Linux 编写用到 POSIX 宏 M_PI，
-# MSVC 需 _USE_MATH_DEFINES 才从 <cmath> 暴露。命令行 /D 先于源码生效、值无空格故 cmd/cmake 双解析安全。
-# (本机旧 configure 的 CMAKE_CXX_FLAGS 还带 /DNOMINMAX 防 min/max 宏污染；此处值为单宏以免含空格需引号，
-#  若后续踩 std::min/max 冲突再改为带引号的多值 -DCMAKE_CXX_FLAGS="/D_USE_MATH_DEFINES /DNOMINMAX"。)
-& $RunCMake $Isf (Join-Path $Isf "build") "-DISF_BUILD_SHARED_LIBS=ON -DMNN_BUILD_SHARED_LIBS=OFF -DISF_BUILD_WITH_SAMPLE=OFF -DISF_BUILD_WITH_TEST=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES"
-cmd /c "call `"$Vcvars`" >nul && cmake --install `"$(Join-Path $Isf 'build')`""
+Import-VcvarsEnv $Vcvars
+# CMAKE_POLICY_VERSION_MINIMUM=3.5：MNN 首行 cmake_minimum_required(3.0)，新版 CMake 拒 <3.5，传该值放行。
+$isfArgs = @(
+    '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
+    '-DISF_BUILD_SHARED_LIBS=ON', '-DMNN_BUILD_SHARED_LIBS=OFF',
+    '-DISF_BUILD_WITH_SAMPLE=OFF', '-DISF_BUILD_WITH_TEST=OFF',
+    '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+    "-DCMAKE_CXX_FLAGS=$CxxWinFix",
+    '-S', $Isf, '-B', (Join-Path $Isf 'build')
+)
+& cmake @isfArgs
+if ($LASTEXITCODE -ne 0) { throw "InspireFace 配置失败" }
+& cmake --build (Join-Path $Isf 'build') --parallel
+if ($LASTEXITCODE -ne 0) { throw "InspireFace 编译失败" }
+& cmake --install (Join-Path $Isf 'build')
 if ($LASTEXITCODE -ne 0) { throw "InspireFace 安装失败" }
 
-# 4.2 本应用
+# ---- 4.2 本应用 ----
 Write-Host "==> [编译] windows-bye ..."
-& $RunCMake $Root (Join-Path $Root "build") ""
+$appArgs = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-S', $Root, '-B', (Join-Path $Root 'build'))
+& cmake @appArgs
+if ($LASTEXITCODE -ne 0) { throw "windows-bye 配置失败" }
+& cmake --build (Join-Path $Root 'build') --parallel
+if ($LASTEXITCODE -ne 0) { throw "windows-bye 编译失败" }
 Write-Host "构建成功。下一步运行 scripts\package.ps1 打包便携目录。"
