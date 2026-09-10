@@ -89,10 +89,13 @@ if (-not $SkipDeps) {
     }
 
     # 3.4 模型包
+    # 用 Pikachu 包（检测模型为 SCRFD-500M，约 0.5 GFLOPs），而非 Megatron（SCRFD-2.5G）。
+    # 本应用仅做"人脸存在检测"，500M 精度足够且推理算力约为 2.5G 的 1/5，CPU 占用显著更低。
+    # 两包目录结构一致（face_detect_pixel_list = 160/320/640），代码无需改动。
     New-Item -ItemType Directory -Path (Join-Path $Root "models") -Force | Out-Null
     $Pack = Join-Path $Root "models\app.pack"
     if (-not (Test-Path $Pack) -or (Get-Item $Pack).Length -lt 10000000) {
-        Invoke-ProxyDownload "https://github.com/HyperInspire/InspireFace/releases/download/v1.x/Megatron" $Pack
+        Invoke-ProxyDownload "https://github.com/HyperInspire/InspireFace/releases/download/v1.x/Pikachu" $Pack
     }
 } else {
     Write-Host "==> [依赖] -SkipDeps：跳过联网拉取。"
