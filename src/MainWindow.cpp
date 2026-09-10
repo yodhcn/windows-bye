@@ -68,7 +68,7 @@ QString settingsFilePath() {
 MainWindow::MainWindow(int defaultDelayMs, QWidget* parent)
     : QMainWindow(parent), m_appRoot(QCoreApplication::applicationDirPath()),
       m_delayMs(defaultDelayMs) {
-    setWindowTitle(kAppName);
+    setWindowTitle(kAppName + QStringLiteral(" ") + kAppVersion);
     setWindowIcon(makeAppIcon());
     resize(860, 620);
 

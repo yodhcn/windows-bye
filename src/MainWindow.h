@@ -18,6 +18,10 @@ class QCloseEvent;
 /// 应用显示名称常量（多处复用）。
 inline const QString kAppName = QStringLiteral("Windows Bye");
 
+/// 版本号常量：仅拼接到主窗口标题后，便于人工识别当前构建版本（如 "Windows Bye v0.3.2"）。
+/// 手动发布/自测时改这里即可，不影响 applicationName、托盘提示等其它显示名。
+inline const QString kAppVersion = QStringLiteral("v0.3.2");
+
 /// 主窗口：单页面看护 + 系统托盘（后台运行）+ 离开超时锁屏。
 /// 仅做人脸存在检测（SCRFD-500M），不含身份识别；锁定前释放摄像头，解锁后恢复。
 class MainWindow : public QMainWindow {
