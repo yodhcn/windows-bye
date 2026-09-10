@@ -97,7 +97,10 @@ MainWindow::MainWindow(int defaultDelayMs, QWidget* parent)
     connect(m_worker, &EngineWorker::cameraReady, this, &MainWindow::onCameraReady);
 
     m_watchTimer = new QTimer(this);
-    m_watchTimer->setInterval(500);  // 看护倒计时以秒级推进，500ms 精度足够，降低主线程空转
+    // 看护超时轮询节奏与检测线程 m_present 刷新同频(800ms)。
+    // m_present 本就按检测间隔更新，watchdog 不需要比它更快；
+    // 秒级倒计时 800ms 精度足够，同时降低主线程空转。
+    m_watchTimer->setInterval(800);
     connect(m_watchTimer, &QTimer::timeout, this, &MainWindow::onWatchTimer);
     m_watchTimer->start();
 

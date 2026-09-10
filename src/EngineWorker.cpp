@@ -30,13 +30,16 @@ bool isFrameBlack(const cv::Mat& frame, double threshold = 20.0) {
     return cv::mean(gray)[0] < threshold;
 }
 
-// 检测节流间隔：人脸存在检测无需高帧率，降低 CPU 占用（固定 ~2.5fps）。
-constexpr qint64 kDetectIntervalMs = 400;
+// 检测节流间隔：人脸存在检测无需高帧率，降低 CPU 占用（固定 ~1.25fps）。
+// 与看护超时判断节奏一致：超时延迟默认 30s、最小 1s，远大于检测粒度，
+// 故 800ms 的检测分辨率不会影响锁屏决策，还能显著降低检测推理频次。
+constexpr qint64 kDetectIntervalMs = 800;
 
 // 后台（预览隐藏到托盘）时采集抓帧周期：此时预览无消费者，只需在检测需要新帧前供帧，
-// 故采集降到 ~3fps（略快于检测 2.5fps），避免以摄像头默认高帧率全速抓取+clone 空转。
+// 故采集降到 ~1.67fps（仍略快于检测 1.25fps，保证检测拿到的帧足够新），
+// 避免以摄像头默认高帧率全速抓取+clone 空转。
 // 前台（预览可见）时采集满速（不节流），保证预览画面流畅跟手。
-constexpr qint64 kBackgroundCaptureIntervalMs = 300;
+constexpr qint64 kBackgroundCaptureIntervalMs = 600;
 }  // namespace
 
 EngineWorker::EngineWorker(QString modelPath, QString appRoot, QObject* parent)
