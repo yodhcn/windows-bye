@@ -8,8 +8,8 @@
 - **离开自动锁屏**：画面中无人脸超过设定延迟（可调 1~600 秒）即调用 `LockWorkStation()` 锁定工作台。
 - **锁屏资源释放**：通过 **WTS 会话通知**（`WM_WTSSESSION_CHANGE`）感知系统锁屏/解锁——锁定时主动释放摄像头与检测线程，解锁后自动恢复，避免后台空转。
 - **低 CPU / 省资源设计**：
-  - 检测节流：固定约 2.5 fps（400 ms 一次），无需高帧率。
-  - 采集自适应：前台（预览可见）满速保证流畅；后台（隐藏到托盘）自动降到约 3 fps。
+  - 检测节流：固定约 1.25 fps（800 ms 一次），无需高帧率。
+  - 采集自适应：前台（预览可见）满速保证流畅；后台（隐藏到托盘）自动降到约 1.67 fps（600 ms）。
   - 预览按需发布：仅当主界面可见（有消费者）时才解码并发布预览帧。
   - 摄像头中断/被占用自动重试（约每 3 秒一次），并有黑帧兜底判断。
 - **摄像头设备枚举/选择**：用 DirectShow 枚举，可选设备并记忆。
@@ -28,18 +28,20 @@
 | 系统集成 | Win32 API：`Wtsapi32`（会话通知）、`user32`（LockWorkStation）、`dshow`（设备枚举） | |
 | 构建 | CMake ≥ 3.21 + Ninja + MSVC（VS2022/2026 Build Tools，C++ 工作负载） | |
 | 线程模型 | 双线程：**采集线程** + **检测线程** | 采集写共享帧、检测读共享帧后检测 |
-| 推理模型 | `models/app.pack`（Megatron 资源包，约 61 MB） | 检测/特征等打包，实际仅按需载入检测所需模型 |
+| 推理模型 | `models/app.pack`（Pikachu 资源包，约 17 MB） | 内含 SCRFD-500M 检测模型；仅按需载入检测所需模型 |
 
-> **关于模型与内存**：模型包约 61 MB 但**不会被整包载入内存**。`Launch::Load()` 只读包内 manifest，真正的大模型（识别特征网络 r18 约 48 MB）受 `enable_recognition=false` 门控**不会被加载**。检测-only 会话实际只常驻 SCRFD-320 + landmark + refine_net 约 3 MB 权重；运行时主要内存来自 Qt/OpenCV/MNN 运行时与摄像头工作区。
+> **关于模型与内存**：模型包约 17 MB 但**不会被整包载入内存**。`Launch::Load()` 只读包内 manifest，识别特征网络受 `enable_recognition=false` 门控**不会被加载**。检测-only 会话实际只常驻 SCRFD-320 + landmark + refine_net 约 3 MB 权重；运行时主要内存来自 Qt/OpenCV/MNN 运行时与摄像头工作区。
+>
+> 检测模型选用 **SCRFD-500M**（Pikachu 包，约 0.5 GFLOPs）而非 SCRFD-2.5G（Megatron 包，约 2.5 GFLOPs）：本工具只需判断"有没有人"，500M 精度足够且推理算力约为 1/5，CPU 占用显著更低。两包目录结构一致（`face_detect_pixel_list = 160/320/640`），代码无需改动。
 
 ## 工作原理简述
 
 ```
 摄像头 ──(采集线程, 满速/后台降频)──► 最新帧 ─┐
-        ◄───────────────────────────────┘ 检测线程(每 400ms)
+        ◄───────────────────────────────┘ 检测线程(每 800ms)
                                           │ 克隆最新帧 → InspireFace 检测
                                           ▼
-                                  人脸存在?  → 主窗口 500ms 看护计时
+                                  人脸存在?  → 主窗口 800ms 看护计时
                                           │
               无人脸 ≥ 延迟 && 距上次锁屏 ≥10s ──► LockWorkStation() 锁屏
                                           ▲
@@ -61,11 +63,12 @@ windows-bye/
 │  └─ PreviewWidget.h/.cpp # 摄像头预览 + 人脸框叠加
 ├─ scripts/
 │  ├─ setup.ps1           # 检查并安装环境 + 拉依赖 + 编译（InspireFace + 应用）→ 产出 exe
-│  ├─ package.ps1         # 打包便携目录 dist\windows-bye（DLL/插件/模型）
+│  ├─ package.ps1         # 打包便携目录 dist\windows-bye（Qt/OpenCV/InspireFace DLL + VC++ 运行时 + 模型）
+│  ├─ check_deps.ps1      # 校验便携目录 DLL 依赖是否齐全（防止换机闪退），可导出完整依赖清单
 │  ├─ smoke_test.ps1      # 冒烟测试：启动 exe 后确认进程存活再关闭
 │  └─ tray_test.ps1       # 托盘测试：--tray 后台驻留验证
 ├─ CMakeLists.txt
-├─ models/app.pack         # InspireFace 资源包（运行必需，约 61 MB，默认不入库）
+├─ models/app.pack         # InspireFace 资源包（运行必需，约 17 MB，默认不入库）
 ├─ third_party/            # 本地第三方依赖（Qt/OpenCV/InspireFace），不入库
 ├─ dist/windows-bye/       # 打包产物（exe + DLL + 插件 + models）
 └─ .github/workflows/      # GitHub Actions 工作流（build.yml）
@@ -89,13 +92,18 @@ windows-bye/
 #    —— 若依赖已拉好、只想重新编译，可加 -SkipDeps 跳过联网下载
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 
-# 2) 打包便携目录 dist\windows-bye（windeployqt + OpenCV/InspireFace DLL + 模型）
+# 2) 打包便携目录 dist\windows-bye（windeployqt + OpenCV/InspireFace DLL + VC++ 运行时 + 模型）
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
+
+# 3)（可选）校验便携目录 DLL 依赖是否齐全，避免换机闪退
+powershell -ExecutionPolicy Bypass -File scripts\check_deps.ps1
 ```
 
-> **脚本精简**：只需 4 个脚本。`setup.ps1` 一个入口完成「检查并安装环境 → 拉依赖 → 编 InspireFace → 编本应用」；`package.ps1` 负责把构建产物打包成可分发目录；`smoke_test.ps1` / `tray_test.ps1` 是冒烟/托盘自测脚本。CI 与本地共用同一套脚本，无需额外的编排脚本。
+> **脚本精简**：只需 5 个脚本。`setup.ps1` 一个入口完成「检查并安装环境 → 拉依赖 → 编 InspireFace → 编本应用」；`package.ps1` 负责把构建产物打包成可分发目录；`check_deps.ps1` 校验打包依赖完整性；`smoke_test.ps1` / `tray_test.ps1` 是冒烟/托盘自测脚本。CI 与本地共用同一套脚本，无需额外的编排脚本。
 
 **产物位置**：`dist\windows-bye\`。将该目录整体拷贝到任意 Windows 机器，双击 `windows-bye.exe` 即可运行（不依赖安装）。直接调试运行时，把 `models\app.pack` 放到 exe 同级 `models\` 下即可。
+
+> **关于 VC++ 运行时（换机闪退的根因）**：`windows-bye.exe` 及其依赖的 Qt/OpenCV/InspireFace DLL 都依赖 MSVC 可再发行运行时（`msvcp140.dll` / `vcruntime140.dll` / `vcruntime140_1.dll` / `concrt140.dll` 等）。开发机因为装了 Visual Studio（运行时在 `System32`）能跑，但**目标机若没装 VC++ 可再发行组件就会启动即闪退**。`package.ps1` 第 4 步已自动把这些 DLL 从 `VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT` 拷进便携目录（app-local 部署，应用目录优先于 `System32`），实现真正免安装。
 
 > 手动逐步构建（不想用脚本）：设好 vcvars 环境后 `cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -S . -B build && cmake --build build`，再用 package.ps1 部署。InspireFace 同样方式先于应用单独编一次。
 
